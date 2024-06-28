@@ -850,6 +850,7 @@ static RabbitMQ.Client.PublicationAddress.TryParse(string uriLikeString, out Rab
 static RabbitMQ.Client.QueueDeclareOk.implicit operator string(RabbitMQ.Client.QueueDeclareOk declareOk) -> string
 static RabbitMQ.Client.RabbitMQActivitySource.UseRoutingKeyAsOperationName.get -> bool
 static RabbitMQ.Client.RabbitMQActivitySource.UseRoutingKeyAsOperationName.set -> void
+static RabbitMQ.Client.RabbitMQActivitySource.Deliver(string routingKey, string exchange, ulong deliveryTag, RabbitMQ.Client.ReadOnlyBasicProperties properties, int bodySize) -> System.Diagnostics.Activity
 static RabbitMQ.Client.TcpClientAdapter.GetMatchingHost(System.Collections.Generic.IReadOnlyCollection<System.Net.IPAddress> addresses, System.Net.Sockets.AddressFamily addressFamily) -> System.Net.IPAddress
 static RabbitMQ.Client.TimerBasedCredentialRefresherEventSource.Log.get -> RabbitMQ.Client.TimerBasedCredentialRefresherEventSource
 static readonly RabbitMQ.Client.CachedString.Empty -> RabbitMQ.Client.CachedString

@@ -39,6 +39,7 @@ using System.Threading.Tasks;
 using RabbitMQ.Client;
 using RabbitMQ.Client.client.impl;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Impl;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -99,6 +100,45 @@ namespace Test.SequentialIntegration
                 {
                     consumeBody = a.Body.ToArray();
                     consumerReceivedTcs.SetResult(true);
+                };
+
+                string consumerTag = await _channel.BasicConsumeAsync(queueName, autoAck: true, consumer: consumer);
+                await _channel.BasicPublishAsync("", q.QueueName, sendBody, mandatory: true);
+                await _channel.WaitForConfirmsOrDieAsync();
+
+                await consumerReceivedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.True(await consumerReceivedTcs.Task);
+
+                await _channel.BasicCancelAsync(consumerTag);
+                await Task.Delay(500);
+                AssertActivityData(useRoutingKeyAsOperationName, queueName, _activities, true);
+            }
+        }
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task TestPublisherAndAsyncDefaultConsumerActivityTags(bool useRoutingKeyAsOperationName)
+        {
+            await _channel.ConfirmSelectAsync();
+
+            RabbitMQActivitySource.UseRoutingKeyAsOperationName = useRoutingKeyAsOperationName;
+            var _activities = new List<Activity>();
+            using (ActivityListener activityListener = StartActivityListener(_activities))
+            {
+                await Task.Delay(500);
+                string queueName = $"{Guid.NewGuid()}";
+                QueueDeclareOk q = await _channel.QueueDeclareAsync(queueName);
+                byte[] sendBody = Encoding.UTF8.GetBytes("hi");
+                byte[] consumeBody = null;
+                var consumer = new TestDefaultAsyncConsumer(_channel);
+                var consumerReceivedTcs =
+                    new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                consumer.Received += (o, a) =>
+                {
+                    consumeBody = a.Body.ToArray();
+                    consumerReceivedTcs.SetResult(true);
+                    return Task.CompletedTask;
                 };
 
                 string consumerTag = await _channel.BasicConsumeAsync(queueName, autoAck: true, consumer: consumer);
@@ -276,7 +316,8 @@ namespace Test.SequentialIntegration
         [Theory]
         [InlineData(true)]
         [InlineData(false)]
-        public async Task TestPublisherWithPublicationAddressAndConsumerActivityTagsAsync(bool useRoutingKeyAsOperationName)
+        public async Task TestPublisherWithPublicationAddressAndConsumerActivityTagsAsync(
+            bool useRoutingKeyAsOperationName)
         {
             await _channel.ConfirmSelectAsync();
 
@@ -367,7 +408,8 @@ namespace Test.SequentialIntegration
                     CachedString exchange = new CachedString("");
                     CachedString routingKey = new CachedString(queue);
                     await _channel.QueueDeclareAsync(queue, false, false, false, null);
-                    await _channel.BasicPublishAsync(exchange, routingKey, Encoding.UTF8.GetBytes(msg), mandatory: true);
+                    await _channel.BasicPublishAsync(exchange, routingKey, Encoding.UTF8.GetBytes(msg),
+                        mandatory: true);
                     await _channel.WaitForConfirmsOrDieAsync();
                     QueueDeclareOk ok = await _channel.QueueDeclarePassiveAsync(queue);
                     Assert.Equal(1u, ok.MessageCount);
@@ -481,6 +523,32 @@ namespace Test.SequentialIntegration
             AssertIntTagGreaterThanZero(sendActivity, RabbitMQActivitySource.MessagingEnvelopeSize);
             AssertIntTagGreaterThanZero(sendActivity, RabbitMQActivitySource.MessagingBodySize);
             AssertIntTagGreaterThanZero(receiveActivity, RabbitMQActivitySource.MessagingBodySize);
+        }
+
+        private class TestDefaultAsyncConsumer : AsyncDefaultBasicConsumer
+        {
+            private readonly IChannel _channel;
+
+            public TestDefaultAsyncConsumer(IChannel channel)
+            {
+                _channel = channel;
+            }
+            public event AsyncEventHandler<BasicDeliverEventArgs> Received
+            {
+                add => _receivedWrapper.AddHandler(value);
+                remove => _receivedWrapper.RemoveHandler(value);
+            }
+            private AsyncEventingWrapper<BasicDeliverEventArgs> _receivedWrapper;
+            public override async Task HandleBasicDeliver(string consumerTag, ulong deliveryTag, bool redelivered, string exchange, string routingKey,
+                ReadOnlyBasicProperties properties, ReadOnlyMemory<byte> body)
+
+            {
+                using (Activity activity = RabbitMQActivitySource.SubscriberHasListeners ? RabbitMQActivitySource.Deliver(routingKey, exchange,deliveryTag, properties, body.Length) : default)
+                {
+                    await base.HandleBasicDeliver(consumerTag, deliveryTag, redelivered, exchange, routingKey, properties, body);
+                    await _receivedWrapper.InvokeAsync(this, new BasicDeliverEventArgs(consumerTag, deliveryTag, redelivered, exchange, routingKey, properties, body));
+                }
+            }
         }
     }
 }

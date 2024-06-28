@@ -121,6 +121,12 @@ namespace RabbitMQ.Client
 
         internal static Activity Deliver(BasicDeliverEventArgs deliverEventArgs)
         {
+            return Deliver(deliverEventArgs.RoutingKey, deliverEventArgs.Exchange, deliverEventArgs.DeliveryTag,
+                deliverEventArgs.BasicProperties, deliverEventArgs.Body.Length);
+        }
+
+        public static Activity Deliver(string routingKey, string exchange, ulong deliveryTag, ReadOnlyBasicProperties properties, int bodySize)
+        {
             if (!s_subscriberSource.HasListeners())
             {
                 return null;
@@ -128,17 +134,16 @@ namespace RabbitMQ.Client
 
             // Extract the PropagationContext of the upstream parent from the message headers.
             Activity activity = s_subscriberSource.StartLinkedRabbitMQActivity(
-                UseRoutingKeyAsOperationName ? $"{deliverEventArgs.RoutingKey} deliver" : "deliver",
-                ActivityKind.Consumer, ContextExtractor(deliverEventArgs.BasicProperties));
+                UseRoutingKeyAsOperationName ? $"{routingKey} deliver" : "deliver",
+                ActivityKind.Consumer, ContextExtractor(properties));
             if (activity != null && activity.IsAllDataRequested)
             {
-                PopulateMessagingTags("deliver", deliverEventArgs.RoutingKey, deliverEventArgs.Exchange,
-                    deliverEventArgs.DeliveryTag, deliverEventArgs.BasicProperties, deliverEventArgs.Body.Length,
+                PopulateMessagingTags("deliver", routingKey, exchange,
+                    deliveryTag, properties, bodySize,
                     activity);
             }
 
             return activity;
-
         }
 
         private static Activity StartRabbitMQActivity(this ActivitySource source, string name, ActivityKind kind,
