@@ -30,47 +30,31 @@
 //---------------------------------------------------------------------------
 
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace RabbitMQ.Client
 {
     public class BasicCredentialsProvider : ICredentialsProvider
     {
-        private readonly string _name;
-        private readonly string _userName;
-        private readonly string _password;
+        private readonly ProvidedCredentials _providedCredentials;
 
         public BasicCredentialsProvider(string? name, string userName, string password)
         {
-            _name = name ?? string.Empty;
-            _userName = userName ?? throw new ArgumentNullException(nameof(userName));
-            _password = password ?? throw new ArgumentNullException(nameof(password));
+            Name = name ?? string.Empty;
+            userName = userName ?? throw new ArgumentNullException(nameof(userName));
+            password = password ?? throw new ArgumentNullException(nameof(password));
+            _providedCredentials = new ProvidedCredentials(userName, password, null);
         }
 
-        public string Name
-        {
-            get { return _name; }
-        }
+        public string Name { get; }
 
-        public string UserName
-        {
-            get { return _userName; }
-        }
+        public bool HasExpiryTime => false;
 
-        public string Password
-        {
-            get { return _password; }
-        }
 
-        public Nullable<TimeSpan> ValidUntil
+        public Task<IProvidedCredentials> RefreshAsync(CancellationToken cancellationToken = default)
         {
-            get
-            {
-                return null;
-            }
-        }
-
-        public void Refresh()
-        {
+            return Task.FromResult<IProvidedCredentials>(_providedCredentials);
         }
     }
 }

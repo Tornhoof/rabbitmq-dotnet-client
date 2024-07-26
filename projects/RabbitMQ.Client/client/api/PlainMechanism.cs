@@ -30,13 +30,16 @@
 //---------------------------------------------------------------------------
 
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace RabbitMQ.Client
 {
     public class PlainMechanism : IAuthMechanism
     {
-        public byte[] handleChallenge(byte[]? challenge, ConnectionConfig config)
+        public Task<byte[]> HandleChallengeAsync(byte[]? challenge, ConnectionConfig config, CancellationToken cancellationToken = default)
         {
+            // TODO need a way to model static credentials vs. dynamic one
             return Encoding.UTF8.GetBytes($"\0{config.CredentialsProvider.UserName}\0{config.CredentialsProvider.Password}");
         }
     }

@@ -34,14 +34,16 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace RabbitMQ.Client.OAuth2
 {
     public interface IOAuth2Client
     {
-        IToken RequestToken();
-        IToken RefreshToken(IToken token);
+        Task<IToken> RequestTokenAsync(CancellationToken cancellationToken = default);
+        Task<IToken> RefreshTokenAsync(IToken token, CancellationToken cancellationToken = default);
     }
 
     public interface IToken
@@ -49,7 +51,7 @@ namespace RabbitMQ.Client.OAuth2
         string AccessToken { get; }
         string RefreshToken { get; }
         TimeSpan ExpiresIn { get; }
-        bool hasExpired { get; }
+        bool HasExpired { get; }
     }
 
     public class Token : IToken
@@ -59,15 +61,15 @@ namespace RabbitMQ.Client.OAuth2
 
         public Token(JsonToken json)
         {
-            this._source = json;
-            this._lastTokenRenewal = DateTime.Now;
+            _source = json;
+            _lastTokenRenewal = DateTime.Now;
         }
 
         public string AccessToken
         {
             get
             {
-                return _source.access_token;
+                return _source.AccessToken;
             }
         }
 
@@ -75,7 +77,7 @@ namespace RabbitMQ.Client.OAuth2
         {
             get
             {
-                return _source.refresh_token;
+                return _source.RefreshToken;
             }
         }
 
@@ -83,11 +85,11 @@ namespace RabbitMQ.Client.OAuth2
         {
             get
             {
-                return TimeSpan.FromSeconds(_source.expires_in);
+                return TimeSpan.FromSeconds(_source.ExpiresIn);
             }
         }
 
-        bool IToken.hasExpired
+        bool IToken.HasExpired
         {
             get
             {
@@ -159,12 +161,12 @@ namespace RabbitMQ.Client.OAuth2
     */
     internal class OAuth2Client : IOAuth2Client, IDisposable
     {
-        const string GRANT_TYPE = "grant_type";
-        const string CLIENT_ID = "client_id";
-        const string SCOPE = "scope";
-        const string CLIENT_SECRET = "client_secret";
-        const string REFRESH_TOKEN = "refresh_token";
-        const string GRANT_TYPE_CLIENT_CREDENTIALS = "client_credentials";
+        private const string GrantType = "grant_type";
+        private const string ClientId = "client_id";
+        private const string Scope = "scope";
+        private const string ClientSecret = "client_secret";
+        private const string REFRESH_TOKEN = "refresh_token";
+        private const string GrantTypeClientCredentials = "client_credentials";
 
         private readonly string _clientId;
         private readonly string _clientSecret;
@@ -172,19 +174,19 @@ namespace RabbitMQ.Client.OAuth2
         private readonly string _scope;
         private readonly IDictionary<string, string> _additionalRequestParameters;
 
-        public static readonly IDictionary<string, string> EMPTY = new Dictionary<string, string>();
+        private static readonly IDictionary<string, string> Empty = new Dictionary<string, string>();
 
-        private HttpClient _httpClient;
+        private readonly HttpClient _httpClient;
 
         public OAuth2Client(string clientId, string clientSecret, Uri tokenEndpoint, string scope,
                 IDictionary<string, string> additionalRequestParameters,
                 HttpClientHandler httpClientHandler)
         {
-            this._clientId = clientId;
-            this._clientSecret = clientSecret;
-            this._scope = scope;
-            this._additionalRequestParameters = additionalRequestParameters == null ? EMPTY : additionalRequestParameters;
-            this._tokenEndpoint = tokenEndpoint;
+            _clientId = clientId;
+            _clientSecret = clientSecret;
+            _scope = scope;
+            _additionalRequestParameters = additionalRequestParameters == null ? Empty : additionalRequestParameters;
+            _tokenEndpoint = tokenEndpoint;
 
             _httpClient = httpClientHandler == null ? new HttpClient() :
                 new HttpClient(httpClientHandler);
@@ -192,37 +194,43 @@ namespace RabbitMQ.Client.OAuth2
             _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         }
 
-        public IToken RequestToken()
+        public async Task<IToken> RequestTokenAsync(CancellationToken cancellationToken = default)
         {
-            var req = new HttpRequestMessage(HttpMethod.Post, _tokenEndpoint);
-            req.Content = new FormUrlEncodedContent(buildRequestParameters());
+            using (var req = new HttpRequestMessage(HttpMethod.Post, _tokenEndpoint))
+            {
+                req.Content = new FormUrlEncodedContent(BuildRequestParameters());
 
-            Task<HttpResponseMessage> response = _httpClient.SendAsync(req);
-            response.Wait();
-            response.Result.EnsureSuccessStatusCode();
-            Task<JsonToken> token = response.Result.Content.ReadFromJsonAsync<JsonToken>();
-            token.Wait();
-            return new Token(token.Result);
+                using (var response = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false))
+                {
+                    response.EnsureSuccessStatusCode();
+                    var token = await response.Content
+                        .ReadFromJsonAsync<JsonToken>(cancellationToken: cancellationToken)
+                        .ConfigureAwait(false);
+                    return new Token(token);
+                }
+            }
         }
 
-        public IToken RefreshToken(IToken token)
+        public async Task<IToken> RefreshTokenAsync(IToken token, CancellationToken cancellationToken = default)
         {
             if (token.RefreshToken == null)
             {
                 throw new InvalidOperationException("Token has no Refresh Token");
             }
 
-            var req = new HttpRequestMessage(HttpMethod.Post, _tokenEndpoint)
+            using (var req = new HttpRequestMessage(HttpMethod.Post, _tokenEndpoint))
             {
-                Content = new FormUrlEncodedContent(buildRefreshParameters(token))
-            };
+                req.Content = new FormUrlEncodedContent(BuildRefreshParameters(token));
 
-            Task<HttpResponseMessage> response = _httpClient.SendAsync(req);
-            response.Wait();
-            response.Result.EnsureSuccessStatusCode();
-            Task<JsonToken> refreshedToken = response.Result.Content.ReadFromJsonAsync<JsonToken>();
-            refreshedToken.Wait();
-            return new Token(refreshedToken.Result);
+                using (var response = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false))
+                {
+                    response.EnsureSuccessStatusCode();
+                    var refreshedToken = await response.Content
+                        .ReadFromJsonAsync<JsonToken>(cancellationToken: cancellationToken)
+                        .ConfigureAwait(false);
+                    return new Token(refreshedToken);
+                }
+            }
         }
 
         public void Dispose()
@@ -230,29 +238,29 @@ namespace RabbitMQ.Client.OAuth2
             _httpClient.Dispose();
         }
 
-        private Dictionary<string, string> buildRequestParameters()
+        private Dictionary<string, string> BuildRequestParameters()
         {
             var dict = new Dictionary<string, string>(_additionalRequestParameters)
             {
-                { CLIENT_ID, _clientId },
-                { CLIENT_SECRET, _clientSecret }
+                { ClientId, _clientId },
+                { ClientSecret, _clientSecret }
             };
             if (_scope != null && _scope.Length > 0)
             {
-                dict.Add(SCOPE, _scope);
+                dict.Add(Scope, _scope);
             }
-            dict.Add(GRANT_TYPE, GRANT_TYPE_CLIENT_CREDENTIALS);
+            dict.Add(GrantType, GrantTypeClientCredentials);
             return dict;
         }
 
-        private Dictionary<string, string> buildRefreshParameters(IToken token)
+        private Dictionary<string, string> BuildRefreshParameters(IToken token)
         {
-            var dict = buildRequestParameters();
-            dict.Remove(GRANT_TYPE);
-            dict.Add(GRANT_TYPE, REFRESH_TOKEN);
+            var dict = BuildRequestParameters();
+            dict.Remove(GrantType);
+            dict.Add(GrantType, REFRESH_TOKEN);
             if (_scope != null)
             {
-                dict.Add(SCOPE, _scope);
+                dict.Add(Scope, _scope);
             }
             dict.Add(REFRESH_TOKEN, token.RefreshToken);
             return dict;
@@ -265,31 +273,34 @@ namespace RabbitMQ.Client.OAuth2
         {
         }
 
-        public JsonToken(string access_token, string refresh_token, TimeSpan expires_in_span)
+        public JsonToken(string accessToken, string refreshToken, TimeSpan expiresInSpan)
         {
-            this.access_token = access_token;
-            this.refresh_token = refresh_token;
-            this.expires_in = (long)expires_in_span.TotalSeconds;
+            AccessToken = accessToken;
+            RefreshToken = refreshToken;
+            ExpiresIn = (long)expiresInSpan.TotalSeconds;
         }
 
-        public JsonToken(string access_token, string refresh_token, long expires_in)
+        public JsonToken(string accessToken, string refreshToken, long expiresIn)
         {
-            this.access_token = access_token;
-            this.refresh_token = refresh_token;
-            this.expires_in = expires_in;
+            AccessToken = accessToken;
+            RefreshToken = refreshToken;
+            ExpiresIn = expiresIn;
         }
 
-        public string access_token
-        {
-            get; set;
-        }
-
-        public string refresh_token
+        [JsonPropertyName("access_token")]
+        public string AccessToken
         {
             get; set;
         }
 
-        public long expires_in
+        [JsonPropertyName("refresh_token")]
+        public string RefreshToken
+        {
+            get; set;
+        }
+
+        [JsonPropertyName("expires_in")]
+        public long ExpiresIn
         {
             get; set;
         }

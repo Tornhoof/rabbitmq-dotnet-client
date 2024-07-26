@@ -41,7 +41,7 @@ namespace RabbitMQ.Client
         ICredentialsProvider Register(ICredentialsProvider provider, NotifyCredentialRefreshedAsync callback);
         bool Unregister(ICredentialsProvider provider);
 
-        delegate Task NotifyCredentialRefreshedAsync(bool successfully);
+        delegate Task NotifyCredentialRefreshedAsync(bool successfully, string password);
     }
 
     [EventSource(Name = "TimerBasedCredentialRefresher")]
@@ -72,10 +72,9 @@ namespace RabbitMQ.Client
     public class TimerBasedCredentialRefresher : ICredentialsRefresher
     {
         private readonly ConcurrentDictionary<ICredentialsProvider, System.Timers.Timer> _registrations = new ConcurrentDictionary<ICredentialsProvider, System.Timers.Timer>();
-
         public ICredentialsProvider Register(ICredentialsProvider provider, ICredentialsRefresher.NotifyCredentialRefreshedAsync callback)
         {
-            if (!provider.ValidUntil.HasValue || provider.ValidUntil.Value.Equals(TimeSpan.Zero))
+            if (!provider.HasExpiryTime)
             {
                 return provider;
             }

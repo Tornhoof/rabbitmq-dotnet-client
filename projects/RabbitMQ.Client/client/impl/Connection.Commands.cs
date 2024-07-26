@@ -133,7 +133,8 @@ namespace RabbitMQ.Client.Framing.Impl
                 byte[]? challenge = null;
                 do
                 {
-                    byte[] response = mechanism.handleChallenge(challenge, _config);
+                    byte[] response = await mechanism.HandleChallengeAsync(challenge, _config, cancellationToken)
+                        .ConfigureAwait(false);
                     ConnectionSecureOrTune res;
                     if (challenge is null)
                     {
@@ -192,18 +193,18 @@ namespace RabbitMQ.Client.Framing.Impl
 
         private void MaybeStartCredentialRefresher()
         {
-            if (_config.CredentialsProvider.ValidUntil != null)
+            if (_config.CredentialsProvider.HasExpiryTime)
             {
                 _config.CredentialsRefresher.Register(_config.CredentialsProvider, NotifyCredentialRefreshedAsync);
             }
         }
 
-        private async Task NotifyCredentialRefreshedAsync(bool succesfully)
+        private async Task NotifyCredentialRefreshedAsync(bool succesfully, string password)
         {
             if (succesfully)
             {
                 using var cts = new CancellationTokenSource(InternalConstants.DefaultConnectionCloseTimeout);
-                await UpdateSecretAsync(_config.CredentialsProvider.Password, "Token refresh", cts.Token)
+                await UpdateSecretAsync(password, "Token refresh", cts.Token)
                     .ConfigureAwait(false);
             }
         }

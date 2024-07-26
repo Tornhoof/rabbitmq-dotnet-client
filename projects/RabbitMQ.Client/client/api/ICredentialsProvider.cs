@@ -29,11 +29,25 @@
 //  Copyright (c) 2007-2024 Broadcom. All Rights Reserved.
 //---------------------------------------------------------------------------
 
+using System.Threading;
+using System.Threading.Tasks;
+
 namespace RabbitMQ.Client
 {
     public interface ICredentialsProvider
     {
         string Name { get; }
+        bool HasExpiryTime { get; }
+        /// <summary>
+        /// Before the credentials are available, be it Username, Password or ValidUntil,
+        /// the credentials must be obtained by calling this method.
+        /// And to keep it up to date, this method must be called before the ValidUntil interval.
+        /// </summary>
+        Task<IProvidedCredentials> RefreshAsync(CancellationToken cancellationToken = default);
+    }
+
+    public interface IProvidedCredentials
+    {
         string UserName { get; }
         string Password { get; }
 
@@ -43,11 +57,5 @@ namespace RabbitMQ.Client
         /// </summary>
         System.TimeSpan? ValidUntil { get; }
 
-        /// <summary>
-        /// Before the credentials are available, be it Username, Password or ValidUntil,
-        /// the credentials must be obtained by calling this method.
-        /// And to keep it up to date, this method must be called before the ValidUntil interval.
-        /// </summary>
-        void Refresh();
     }
 }

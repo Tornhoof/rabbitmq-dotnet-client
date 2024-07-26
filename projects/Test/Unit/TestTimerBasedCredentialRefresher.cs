@@ -85,9 +85,12 @@ namespace Test.Unit
 
         public TimeSpan? ValidUntil => _validUntil;
 
-        public void Refresh()
+        public bool HasExpiryTime => ValidUntil != null;
+
+        public Task<IProvidedCredentials> RefreshAsync(CancellationToken cancellationToken = default)
         {
             _refreshCalled = true;
+            return Task.FromResult<IProvidedCredentials>(new ProvidedCredentials(UserName, Password, ValidUntil));
         }
 
         public void PasswordThrows(Exception ex)
@@ -109,7 +112,7 @@ namespace Test.Unit
         [Fact]
         public void TestRegister()
         {
-            Task cb(bool unused) => Task.CompletedTask;
+            Task cb(bool unused, string pw) => Task.CompletedTask;
             ICredentialsProvider credentialsProvider = new MockCredentialsProvider(_testOutputHelper);
 
             Assert.True(credentialsProvider == _refresher.Register(credentialsProvider, cb));
@@ -120,7 +123,7 @@ namespace Test.Unit
         public void TestDoNotRegisterWhenHasNoExpiry()
         {
             ICredentialsProvider credentialsProvider = new MockCredentialsProvider(_testOutputHelper, TimeSpan.Zero);
-            Task cb(bool unused) => Task.CompletedTask;
+            Task cb(bool unused, string pw) => Task.CompletedTask;
 
             _refresher.Register(credentialsProvider, cb);
 
@@ -137,7 +140,7 @@ namespace Test.Unit
                 {
                     var credentialsProvider = new MockCredentialsProvider(_testOutputHelper, TimeSpan.FromSeconds(1));
 
-                    Task cb(bool arg)
+                    Task cb(bool arg, string pw)
                     {
                         tcs.SetResult(arg);
                         return Task.CompletedTask;
@@ -161,7 +164,7 @@ namespace Test.Unit
                 {
                     var credentialsProvider = new MockCredentialsProvider(_testOutputHelper, TimeSpan.FromSeconds(1));
 
-                    Task cb(bool arg)
+                    Task cb(bool arg, string pw)
                     {
                         tcs.SetResult(arg);
                         return Task.CompletedTask;
