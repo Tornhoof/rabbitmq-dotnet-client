@@ -114,6 +114,8 @@ namespace RabbitMQ.Client
 
         private System.Timers.Timer scheduleTimer(ICredentialsProvider provider, ICredentialsRefresher.NotifyCredentialRefreshedAsync callback)
         {
+            // TODO: .NET 6 has PeriodicTImer, you can change the period while it's running, but it applies only for later ticks
+            // FOR .NET Standard 2.0 a loop with Refresh/Delay might be best
             System.Timers.Timer timer = new System.Timers.Timer();
             timer.Interval = provider.ValidUntil!.Value.TotalMilliseconds * (1.0 - (1 / 3.0));
             timer.Elapsed += (o, e) =>
